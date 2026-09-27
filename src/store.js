@@ -17,7 +17,7 @@ export const SCHEMA_VERSION = 1;
 // Поднимать при любом изменении файлов приложения и одновременно менять VERSION в sw.js на то же значение,
 // tools/logic_test.html сверяет их. Иначе установленное приложение продолжит брать файлы из прежнего кэша
 // и изменений не увидит. Новая версия ставит новый кэш, старый удаляется при следующем запуске.
-export const APP_VERSION = '2.0.0';
+export const APP_VERSION = '2.0.1';
 
 const APP_ID = 'vault-tec-gym';
 const DB_NAME = 'vault-tec-gym';

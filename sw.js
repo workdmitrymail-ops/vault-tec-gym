@@ -21,7 +21,7 @@
 // (шрифты Google) не перехватываются. Страницы из tools/ и всё, что они запрашивают, идут в сеть мимо кэша:
 // проверки должны видеть текущие файлы, а не закэшированную версию.
 
-const VERSION = '2.0.0';   // равна APP_VERSION в src/store.js
+const VERSION = '2.0.1';   // равна APP_VERSION в src/store.js
 const PREFIX = 'vtg-shell-';
 const CACHE = PREFIX + VERSION;
 const SCOPE = self.registration.scope;

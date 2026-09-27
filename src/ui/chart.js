@@ -27,13 +27,15 @@ function niceStep(range, count) {
 }
 
 // Данные без отрицательных значений (вес, максимум, тоннаж, число тренировок) не опускают ось ниже нуля:
-// ни при единственной точке, где шкала раздвигается на единицу в обе стороны, ни при округлении шага
+// ни при единственной точке, где шкала раздвигается вокруг значения, ни при округлении шага.
+// Единственное значение получает шкалу шириной 2: шаг выходит целым, и подписи, округлённые
+// до целых, не повторяются (при нуле 0, 1, 2, а не 0, 0,5, 1)
 export function scaleY(values, zeroBased) {
   let min = Math.min(...values);
   let max = Math.max(...values);
   const floor = min >= 0 ? 0 : -Infinity;
   if (zeroBased) min = 0;
-  if (min === max) { min = zeroBased ? 0 : Math.max(floor, min - 1); max = max + 1; }
+  if (min === max) { min = zeroBased ? 0 : Math.max(floor, min - 1); max = min + 2; }
   const step = niceStep(max - min, 3);
   const lo = Math.max(floor, Math.floor(min / step) * step);
   const hi = Math.ceil(max / step) * step;

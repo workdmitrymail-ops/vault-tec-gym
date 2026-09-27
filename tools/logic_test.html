@@ -269,6 +269,13 @@
       return [bad.length === 0, bad.map((v) => JSON.stringify(v)).join(' ')];
     });
     check('Ось графика с отрицательными данными не обрезается нулём', () => scaleY([-2, 3], false).lo <= -2);
+    check('Одна запись: шаг шкалы целый, подписи до целых не повторяются', () => {
+      const bad = [[0], [7], [61.4], [0, 0]].filter((v) => {
+        const labels = scaleY(v, false).ticks.map((t) => S.fmt(t, 0));
+        return new Set(labels).size !== labels.length;
+      });
+      return [bad.length === 0, bad.map((v) => JSON.stringify(v)).join(' ')];
+    });
 
     // ---- Шаг 5: вкладки, заморозка записи, манифест, список кэша ----
     // Асинхронные проверки держат своё место в списке, порядок вывода не зависит от скорости сети
