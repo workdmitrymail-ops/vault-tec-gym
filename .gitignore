@@ -1,0 +1,35 @@
+# VAULT-TEC GYM · что не попадает в репозиторий
+
+# Служебные файлы среды разработки и редакторов
+.claude/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Python: кэш скриптов подготовки ассетов
+__pycache__/
+*.pyc
+
+# Диагностические превью мышечной карты: tools/build_muscle_map.py пишет их при каждом запуске
+assets/map/_check/
+
+# Резервные копии данных приложения: личные тренировки и вес тела
+vault-tec-gym-*.json
+*.backup.json
+
+# Снимки экрана и прочее от проверок
+shot-*.png
+screenshot*.png
+Screenshot*.png
+Снимок экрана*.png
+*.log
+
+# Временные профили браузера и временные файлы
+chrome-profile/
+vtg-chrome/
+tmp/
+*.tmp
+~$*

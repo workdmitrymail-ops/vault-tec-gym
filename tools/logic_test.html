@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Проверки логики · VAULT-TEC GYM</title>
+  <link rel="icon" href="../assets/icons/icon-192.png" type="image/png">
+  <link rel="stylesheet" href="../src/tokens.css">
+  <style>
+    body { margin: 0; padding: var(--pad); background: var(--c-bg); color: var(--c-text); font: var(--t-body); }
+    h1 { margin: 0 0 var(--gap-sm); font: var(--t-screen); }
+    .total { margin: 0 0 var(--gap); font: var(--t-data); }
+    ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--gap-sm); }
+    li { display: flex; gap: var(--gap-sm); font: var(--t-data); }
+    .mark { flex: none; font-weight: 700; }
+    .ok .mark { color: var(--c-text); }
+    .fail .mark { color: var(--c-danger); }
+    .detail { color: var(--c-muted); font: var(--t-small); }
+  </style>
+</head>
+<body>
+  <h1>Проверки логики</h1>
+  <p class="total" id="total" role="status">Выполняется…</p>
+  <ol id="list"></ol>
+
+  <script type="module">
+    // Открывать через локальный сервер из корня проекта: http://localhost:8080/tools/logic_test.html
+    // Проверяются чистые функции src/logic.js и src/stats.js. Даты фиксированы, результат не зависит от сегодняшнего дня.
+    // Проверки шага 5 читают файлы проекта и базу этого адреса только на чтение; в конце модуль хранилища
+    // этой страницы замораживается и проверяется, что после этого запись никуда не доходит.
+    // Service worker страницы из tools/ не обслуживает: здесь всегда текущие файлы, а не кэш.
+    import * as L from '../src/logic.js';
+    import * as S from '../src/stats.js';
+    import * as store from '../src/store.js';
+    import * as session from '../src/session.js';
+    import { createSync } from '../src/sync.js';
+    import { cacheName } from '../src/pwa.js';
+    import { scaleY } from '../src/ui/chart.js';
+    import { PROGRAM, MAP_ZONE } from '../src/data.js';
+
+    const results = [];
+    const check = (name, fn) => {
+      let ok = false;
+      let detail = '';
+      try {
+        const r = fn();
+        ok = r === true || (Array.isArray(r) && r[0] === true);
+        if (Array.isArray(r)) detail = r[1] ?? '';
+      } catch (e) {
+        detail = e.message;
+      }
+      results.push({ name, ok, detail });
+    };
+    const near = (a, b, eps = 0.01) => Math.abs(a - b) < eps;
+
+    const mon = PROGRAM.find((d) => d.id === 'mon');
+    const wed = PROGRAM.find((d) => d.id === 'wed');
+    const plans = { deadlift: { exId: 'deadlift', warm: [{ w: 10, r: 8 }, { w: 20, r: 8 }], work: 45, reps: [8, 8, 8], sets: 3 } };
+    const build = (deload = false) => L.buildWorkout({ day: wed, date: new Date(2026, 8, 23), now: new Date(2026, 8, 23, 18), plans, week: deload ? 8 : 2, deload });
+
+    // ---- Перенос значений ----
+    check('На тот же вес второй раз не спрашивает', () => {
+      const w = build(); const dl = w.items[1];
+      dl.sets.forEach((s) => { s.state = 'done'; s.w = 50; });
+      L.answerTransfer(w, L.transferPrompt(w, 1, 2), false);
+      return L.transferPrompt(w, 1, 3) === null;
+    });
+    check('Ответ «Нет, только сегодня» оставляет прежний рабочий вес', () => {
+      const w = build(); const dl = w.items[1];
+      dl.sets.forEach((s) => { s.state = 'done'; });
+      dl.sets.slice(2).forEach((s) => { s.w = 50; });
+      L.answerTransfer(w, L.transferPrompt(w, 1, 2), false);
+      const r = L.finishWorkout(w, plans, new Date()).plans.deadlift.work;
+      return [r === 45, `вес ${r}`];
+    });
+    check('Ответ «Да» по разминке переносит только этот подход', () => {
+      const w = build(); const dl = w.items[1];
+      dl.sets.forEach((s) => { s.state = 'done'; });
+      dl.sets[1].w = 25;
+      L.answerTransfer(w, L.transferPrompt(w, 1, 1), true);
+      const r = L.finishWorkout(w, plans, new Date()).plans.deadlift.warm;
+      return [r[0].w === 10 && r[1].w === 25, JSON.stringify(r)];
+    });
+    check('Действует последний ответ', () => {
+      const w = build(); const dl = w.items[1];
+      dl.sets.forEach((s) => { s.state = 'done'; });
+      dl.sets.slice(2).forEach((s) => { s.w = 50; });
+      const p = L.transferPrompt(w, 1, 2);
+      L.answerTransfer(w, p, false);
+      L.answerTransfer(w, p, true);
+      return L.finishWorkout(w, plans, new Date()).plans.deadlift.work === 50;
+    });
+    check('Принятый перенос попадает в список для отмены', () => {
+      const w = build(); const dl = w.items[1];
+      dl.sets.forEach((s) => { s.state = 'done'; });
+      dl.sets.slice(2).forEach((s) => { s.w = 50; });
+      L.answerTransfer(w, L.transferPrompt(w, 1, 2), true);
+      const a = L.finishWorkout(w, plans, new Date()).record.applied;
+      return [a.length === 1 && a[0].from === 45 && a[0].to === 50 && a[0].type === 'work', JSON.stringify(a)];
+    });
+    check('Без задания плашка не нужна, первый вес переносится как есть', () => {
+      const w = build(); const lc = w.items[3];
+      lc.sets.forEach((s) => { s.w = 30; s.state = 'done'; });
+      return L.transferPrompt(w, 3, 1) === null && L.finishWorkout(w, plans, new Date()).plans.leg_curl.work === 30;
+    });
+    check('Невыполненные подходы не идут в историю, число подходов переносится', () => {
+      const w = build(); const dl = w.items[1];
+      dl.sets.forEach((s) => { s.state = 'done'; });
+      dl.sets.at(-1).state = 'skipped';
+      const { record, plans: p } = L.finishWorkout(w, plans, new Date());
+      return [record.items[1].sets.length === 4 && p.deadlift.sets === 3, `в истории ${record.items[1].sets.length}, в задании ${p.deadlift.sets}`];
+    });
+    check('Без задания: вес 0, повторы по нижней границе', () => {
+      const cr = build().items.at(-1).sets[0];
+      return cr.w === 0 && cr.r === 12;
+    });
+
+    // ---- Цикл ----
+    check('Разгрузка: 3 рабочих подхода становятся 2', () => build(true).items[1].sets.filter((s) => s.type === 'work').length === 2);
+    check('Разгрузка не урезает задание на следующий раз', () => {
+      const w = build(true); w.items[1].sets.forEach((s) => { s.state = 'done'; });
+      return L.finishWorkout(w, plans, new Date()).plans.deadlift.sets === 3;
+    });
+    const c = { startedAt: '2026-09-16' };
+    check('Неделя 1 в день старта цикла', () => L.cycleWeek(c, new Date(2026, 8, 16)).week === 1);
+    check('Неделя 2 с понедельника 21 сентября', () => L.cycleWeek(c, new Date(2026, 8, 21)).week === 2);
+    check('Неделя 8 разгрузочная', () => L.cycleWeek(c, new Date(2026, 10, 4)).deload === true);
+    check('После 8 недели цикл начинается заново', () => L.cycleWeek(c, new Date(2026, 10, 9)).week === 1);
+
+    // ---- Выбор тренировки ----
+    check('Четверг без истории: пятница, пропусков нет', () => {
+      const n = L.nextWorkout(new Date(2026, 8, 24), [], null);
+      return n.day.id === 'fri' && !n.isToday && n.missed === null;
+    });
+    check('Пятница, среда не сделана: сегодня пятница, пропущена среда', () => {
+      const n = L.nextWorkout(new Date(2026, 8, 25), [{ dayId: 'mon', date: '2026-09-21' }], { startedAt: '2026-09-21' });
+      return n.day.id === 'fri' && n.isToday && n.missed?.day.id === 'wed';
+    });
+    check('Среда, сделанная в четверг, не считается пропуском', () => {
+      const n = L.nextWorkout(new Date(2026, 8, 25), [{ dayId: 'fri', date: '2026-09-25' }, { dayId: 'wed', date: '2026-09-24' }], { startedAt: '2026-09-21' });
+      return n.day.id === 'mon' && n.missed === null;
+    });
+    check('Воскресенье: следующая понедельник 28', () => {
+      const n = L.nextWorkout(new Date(2026, 8, 27), [{ dayId: 'fri', date: '2026-09-25' }], { startedAt: '2026-09-21' });
+      return n.day.id === 'mon' && n.date.getDate() === 28;
+    });
+    check('Заголовок среды без повтора, понедельник с подзаголовком', () => [L.dayTitle(wed) === 'Ноги' && L.dayTitle(mon) === 'Верх тела · жимовой день', `${L.dayTitle(wed)} | ${L.dayTitle(mon)}`]);
+
+    // ---- Статистика ----
+    const rec = (id, date, exId, sets, extra = {}) => ({
+      id, date, dayId: 'wed', startedAt: `${date}T10:00:00.000Z`, finishedAt: `${date}T11:05:00.000Z`,
+      items: [{ kind: 'exercise', exId, origExId: exId, sets: sets.map(([w, r, type = 'work']) => ({ type, w, r })) }], ...extra
+    });
+    const r1 = rec('a', '2026-08-01', 'deadlift', [[40, 10], [40, 10], [40, 9]]);
+    const r2 = rec('b', '2026-08-25', 'deadlift', [[45, 10], [45, 9], [45, 8]]);
+    const r3 = rec('c', '2026-09-23', 'deadlift', [[20, 8, 'warm'], [50, 8], [50, 8], [45, 11]]);
+
+    check('Расчётный максимум по Эпли: 100 × 10 = 133,33', () => near(S.e1rm(100, 10), 133.33));
+    check('Тоннаж только рабочих подходов', () => {
+      const s = S.summary(r3);
+      return [s.tonnage === 50 * 8 * 2 + 45 * 11 && s.sets === 3 && s.duration === 65 * 60 * 1000, `тоннаж ${s.tonnage}, подходов ${s.sets}`];
+    });
+    check('Объём по группам: основная 1, вспомогательная 0,5', () => {
+      const v = S.groupVolume([r2]);
+      return [v.glutes === 3 && v.hamstrings === 3 && v.lower_back === 1.5 && v.forearms === 1.5, JSON.stringify(v)];
+    });
+    check('Зоны объёма по таблице SPEC', () => ['мало', 'поддержание', 'поддержание', 'рост', 'рост', 'высокий объём'].join() === [5, 6, 9.5, 10, 20, 20.5].map(S.volumeZone).join());
+    check('Рекорды: вес, повторы на весе и расчётный максимум', () => {
+      const kinds = S.newRecords(r3, [r1, r2]).map((r) => r.kind).sort().join();
+      return [kinds === 'e1rm,reps,weight', kinds];
+    });
+    check('Первое выполнение упражнения рекордом не считается', () => S.newRecords(r1, []).length === 0);
+    check('Упражнение дважды в тренировке после замены: рекорд один, подходы объединены', () => {
+      const twice = rec('d', '2026-09-24', 'deadlift', [[55, 8]]);
+      twice.items.push({ kind: 'exercise', exId: 'deadlift', origExId: 'hack_squat', sets: [{ type: 'work', w: 55, r: 6 }] });
+      const weightRecords = S.newRecords(twice, [r1, r2]).filter((r) => r.kind === 'weight').length;
+      const hist = S.exerciseHistory([twice], 'deadlift');
+      return [weightRecords === 1 && hist.length === 1 && hist[0].work.length === 2, `рекордов веса ${weightRecords}, записей ${hist.length}`];
+    });
+    check('Изменение по упражнению относительно прошлого раза', () => {
+      const ch = S.changes(r3, [r1, r2])[0];
+      return ch.dir === 'up' && ch.before === 45 && ch.now === 50;
+    });
+    check('Изменение рабочего веса за месяц: +10 кг', () => {
+      const m = S.monthChange([r1, r2, r3], 'deadlift', new Date(2026, 8, 23));
+      return [m === 10, `получено ${m}`];
+    });
+    check('Изменения за месяц нет при одной тренировке', () => S.monthChange([r3], 'deadlift', new Date(2026, 8, 23)) === null);
+    check('Пропуски по неделям: сегодняшний день пропуском не считается', () => {
+      const weeks = S.weeklyCounts([rec('x', '2026-09-16', 'deadlift', [[40, 8]]), rec('y', '2026-09-18', 'deadlift', [[40, 8]])], { startedAt: '2026-09-14' }, new Date(2026, 8, 23));
+      const t = weeks.map((w) => `${w.week}:${w.done}/${w.due}/${w.missed}`).join(' ');
+      return [t === '2026-09-14:2/3/1 2026-09-21:0/1/1', t];
+    });
+    check('Упражнение с собственным весом без записи веса тела строится по повторам', () => {
+      const s = S.exerciseSeries([rec('p', '2026-09-20', 'pullups', [[0, 8], [0, 7]])], 'pullups');
+      return s.mode === 'reps' && s.weight[0].y === 8;
+    });
+    check('С записью веса тела нагрузка это вес тела плюс дополнительный', () => {
+      const s = S.exerciseSeries([rec('p', '2026-09-20', 'pullups', [[5, 8]])], 'pullups', [], [{ date: '2026-09-19', value: 80 }]);
+      return [s.mode === 'weight' && s.weight[0].y === 85, JSON.stringify(s.weight)];
+    });
+    check('Вес тела: среднее за 7 дней и изменения', () => {
+      const bw = [{ date: '2026-08-20', value: 84 }, { date: '2026-09-15', value: 83 }, { date: '2026-09-18', value: 82.6 }, { date: '2026-09-22', value: 82.2 }];
+      const st = S.bwStats(bw, new Date(2026, 8, 23));
+      return [near(st.avg7, 82.4) && st.avg7Count === 2 && near(st.week, -0.8) && near(st.month, -1.8) && near(st.all, -1.8), JSON.stringify(st)];
+    });
+    check('Относительная сила: рабочий вес на вес тела', () => {
+      const rel = S.relativeStrength({ deadlift: { work: 60 } }, 80);
+      return rel.length === 1 && near(rel[0].ratio, 0.75);
+    });
+
+    // ---- Шаг 4: рекорд при равном весе, одна рука, ручной запуск, свои упражнения ----
+    const rEq1 = rec('e1', '2026-09-01', 'deadlift', [[70, 6], [70, 6]]);
+    const rEq2 = rec('e2', '2026-09-08', 'deadlift', [[70, 10], [70, 9]]);
+    check('Рекорд при равном весе: больше повторов', () => {
+      const pr = S.personalRecords([rEq1, rEq2], 'deadlift').maxWeight;
+      return [pr.w === 70 && pr.r === 10 && pr.date === '2026-09-08', JSON.stringify(pr)];
+    });
+    check('Рекорд при равном весе фиксируется в тренировке как рекорд повторов', () => {
+      const kinds = S.newRecords(rEq2, [rEq1]).map((r) => r.kind).sort().join();
+      return [kinds.includes('reps') && !kinds.includes('weight'), kinds];
+    });
+    check('Меньше повторов на том же весе рекордом не считается', () => S.newRecords(rEq1, [rEq2]).filter((r) => r.kind !== 'e1rm').length === 0);
+    check('Тоннаж одной рукой считается на обе руки', () => {
+      const one = rec('u', '2026-09-10', 'pulldown_one', [[25, 10], [25, 10]]);
+      const s = S.summary(one);
+      const series = S.exerciseSeries([one], 'pulldown_one');
+      return [s.tonnage === 25 * 10 * 2 * 2 && series.tonnage[0].y === 1000, `итог ${s.tonnage}, график ${series.tonnage[0].y}`];
+    });
+    check('Тоннаж двумя руками не удваивается', () => S.summary(rec('t', '2026-09-10', 'bb_curl', [[30, 10]])).tonnage === 300);
+
+    const cyc = { startedAt: '2026-09-14' };
+    check('Среда, сделанная вручную во вторник: в среду предлагается пятница', () => {
+      const n = L.nextWorkout(new Date(2026, 8, 23), [{ dayId: 'mon', date: '2026-09-21' }, { dayId: 'wed', date: '2026-09-22' }], cyc);
+      return [n.day.id === 'fri' && !n.isToday && n.missed === null, `${n.day.id}, пропуск ${n.missed?.day.id ?? 'нет'}`];
+    });
+    check('Ручной запуск во вторник не закрывает пропущенный понедельник', () => {
+      const n = L.nextWorkout(new Date(2026, 8, 23), [{ dayId: 'wed', date: '2026-09-22' }], cyc);
+      return [n.day.id === 'fri' && n.missed?.day.id === 'mon', `${n.day.id}, пропуск ${n.missed?.day.id ?? 'нет'}`];
+    });
+    check('Всё на неделю сделано заранее: следующая по расписанию на следующей неделе', () => {
+      const n = L.nextWorkout(new Date(2026, 8, 22), [{ dayId: 'mon', date: '2026-09-21' }, { dayId: 'wed', date: '2026-09-22' }, { dayId: 'fri', date: '2026-09-22' }], cyc);
+      return [n.day.id === 'mon' && n.date.getDate() === 28, `${n.day.id} ${n.date.getDate()}`];
+    });
+    check('Ручной запуск не меняет неделю цикла', () => L.cycleWeek(cyc, new Date(2026, 8, 22)).week === 2);
+    check('Лишняя ручная тренировка не даёт отрицательных пропусков', () => {
+      const weeks = S.weeklyCounts(['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-18'].map((d, i) => rec(`m${i}`, d, 'deadlift', [[40, 8]])), cyc, new Date(2026, 8, 21));
+      return [weeks[0].done === 4 && weeks[0].missed === 0, JSON.stringify(weeks[0])];
+    });
+    const own = { id: 'u-test', name: 'Своя тяга', primary: ['lats'], secondary: [], rest: 90, custom: true };
+    check('Своё упражнение в списке замены на ту же группу', () => L.alternatives('cable_row', [own]).same.some((e) => e.id === 'u-test'));
+    check('Скрытое своё упражнение в список замены не попадает', () => {
+      const { same, other } = L.alternatives('cable_row', [{ ...own, hidden: true }]);
+      return ![...same, ...other].some((e) => e.id === 'u-test');
+    });
+    check('Использование упражнения: история, программа, идущая тренировка', () => {
+      const hist = [{ items: [{ kind: 'exercise', exId: 'u-test', sets: [] }] }];
+      const a = L.exerciseUsage('u-test', hist, null);
+      const b = L.exerciseUsage('u-test', [], { items: [{ exId: 'u-test' }] });
+      const c = L.exerciseUsage('deadlift', [], null);
+      const d = L.exerciseUsage('u-free', hist, null);
+      return a.inHistory && b.inActive && c.inProgram && !d.inHistory && !d.inProgram && !d.inActive;
+    });
+
+    // ---- Ось графика: вес не бывает отрицательным ----
+    check('Ось графика не уходит ниже нуля: одна запись, ноль, ряд с нулём', () => {
+      const cases = [[61.4], [0], [0, 0], [0, 12.5, 20], [0.5]];
+      const bad = cases.filter((v) => { const s = scaleY(v, false); return s.lo < 0 || s.ticks.some((t) => t < 0) || s.hi < Math.max(...v); });
+      return [bad.length === 0, bad.map((v) => JSON.stringify(v)).join(' ')];
+    });
+    check('Ось графика с отрицательными данными не обрезается нулём', () => scaleY([-2, 3], false).lo <= -2);
+
+    // ---- Шаг 5: вкладки, заморозка записи, манифест, список кэша ----
+    // Асинхронные проверки держат своё место в списке, порядок вывода не зависит от скорости сети
+    const pending = [];
+    const checkAsync = (name, fn) => {
+      const slot = { name, ok: false, detail: '' };
+      results.push(slot);
+      pending.push(fn().then((r) => {
+        slot.ok = r === true || (Array.isArray(r) && r[0] === true);
+        if (Array.isArray(r)) slot.detail = r[1] ?? '';
+      }, (e) => { slot.detail = e.message; }));
+    };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const ROOT = new URL('../', location.href).href;
+    const rel = (url) => url.slice(ROOT.length);
+    const text = async (path) => {
+      const res = await fetch(new URL(path, ROOT), { cache: 'no-store' });
+      if (!res.ok) throw new Error(`${path}: ${res.status}`);
+      return res.text();
+    };
+
+    // Отдельный канал: оповещение из проверки не должно перезагрузить открытое приложение
+    checkAsync('Оповещение о замене данных доходит до другой вкладки', async () => {
+      const a = createSync('vault-tec-gym-test'), b = createSync('vault-tec-gym-test');
+      const got = new Promise((resolve) => b.onDataReplaced(resolve));
+      a.announce('wipe');
+      const reason = await Promise.race([got, sleep(1000).then(() => 'нет ответа')]);
+      a.close(); b.close();
+      return [reason === 'wipe', reason];
+    });
+    checkAsync('Отправившая вкладка своё оповещение не получает', async () => {
+      const a = createSync('vault-tec-gym-test-self');
+      let heard = false;
+      a.onDataReplaced(() => { heard = true; });
+      a.announce('import');
+      await sleep(300);
+      a.close();
+      return !heard;
+    });
+
+    let shellList = [];
+    checkAsync('Манифест: имя, адрес запуска для подпапки, отдельное окно, портрет, цвета из токенов', async () => {
+      const m = JSON.parse(await text('manifest.webmanifest'));
+      const bg = (await text('src/tokens.css')).match(/--c-bg:\s*(#[0-9A-Fa-f]{6})/)[1].toUpperCase();
+      const meta = (await text('index.html')).match(/name="theme-color" content="(#[0-9A-Fa-f]{6})"/)?.[1]?.toUpperCase();
+      const problems = [];
+      if (m.name !== 'VAULT-TEC GYM') problems.push('name');
+      if (!m.short_name) problems.push('short_name');
+      if (m.start_url !== './' || m.scope !== './') problems.push('start_url или scope не относительные');
+      if (m.display !== 'standalone') problems.push('display');
+      if (m.orientation !== 'portrait') problems.push('orientation');
+      if (m.background_color?.toUpperCase() !== bg || m.theme_color?.toUpperCase() !== bg) problems.push(`цвета не равны --c-bg ${bg}`);
+      if (meta !== bg) problems.push('theme-color в index.html');
+      return [problems.length === 0, problems.join(', ')];
+    });
+    checkAsync('Иконки: 180 для айфона, 192 и 512 обычные и маскируемые, размеры совпадают', async () => {
+      const m = JSON.parse(await text('manifest.webmanifest'));
+      const html = await text('index.html');
+      const touch = html.match(/rel="apple-touch-icon" href="([^"]+)"/)?.[1];
+      const items = [...m.icons, { src: touch, sizes: '180x180', purpose: 'any' }];
+      const need = ['192:any', '512:any', '192:maskable', '512:maskable', '180:any'];
+      const have = items.map((i) => `${i.sizes.split('x')[0]}:${i.purpose ?? 'any'}`);
+      const bad = [];
+      // Размер по событию load: decode() не завершается, пока вкладка не отрисовывается
+      const load = (src) => new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img.naturalWidth);
+        img.onerror = () => resolve(0);
+        img.src = src;
+      });
+      for (const i of items) {
+        const width = await load(new URL(i.src, ROOT).href);
+        if (width !== Number(i.sizes.split('x')[0])) bad.push(`${i.src} ${width ? `${width} px` : 'не загрузилась'}`);
+      }
+      const missing = need.filter((n) => !have.includes(n));
+      return [!bad.length && !missing.length, [...bad, ...missing.map((n) => `нет ${n}`)].join(', ')];
+    });
+    checkAsync('Список кэша полный: модули от src/app.js, ссылки страницы и манифеста, карта, маскот', async () => {
+      const sw = await text('sw.js');
+      shellList = [...sw.match(/const SHELL = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+      const need = new Set();
+      // Граф модулей: статические и динамические импорты
+      const seen = new Set();
+      const queue = [new URL('src/app.js', ROOT).href];
+      const sources = [];
+      while (queue.length) {
+        const url = queue.pop();
+        if (seen.has(url)) continue;
+        seen.add(url);
+        need.add(rel(url));
+        const src = await text(rel(url));
+        sources.push(src);
+        for (const m of src.matchAll(/(?:import|export)\s[^'";]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|import\s+['"]([^'"]+)['"]/g)) {
+          queue.push(new URL(m[1] ?? m[2] ?? m[3], url).href);
+        }
+      }
+      // Картинки, названные в модулях целиком, и плитки главного экрана
+      for (const src of sources) {
+        for (const m of src.matchAll(/['"`](assets\/[^'"`$]+\.png)['"`]/g)) need.add(m[1]);
+        for (const m of src.matchAll(/'(tile_[a-z]+)'/g)) need.add(`assets/mascot/${m[1]}.png`);
+      }
+      // Мышечная карта: базы двух видов и зоны из data.js
+      need.add('assets/map/base_front.png');
+      need.add('assets/map/base_back.png');
+      for (const z of new Set(Object.values(MAP_ZONE))) need.add(`assets/map/zones/${z}.png`);
+      // Страница: стили, скрипт, манифест, иконки
+      need.add('index.html');
+      for (const m of (await text('index.html')).matchAll(/(?:href|src)="([^"#][^"]*)"/g)) {
+        if (!/^https?:/.test(m[1])) need.add(m[1]);
+      }
+      for (const i of JSON.parse(await text('manifest.webmanifest')).icons) need.add(i.src);
+      const missing = [...need].filter((p) => !shellList.includes(p));
+      return [missing.length === 0, missing.join(', ')];
+    });
+    checkAsync('Все файлы из списка кэша отдаются сервером', async () => {
+      while (!shellList.length) await sleep(50);
+      const bad = [];
+      for (const p of shellList) {
+        const res = await fetch(new URL(p, ROOT), { cache: 'no-store' });
+        if (!res.ok) bad.push(`${p}: ${res.status}`);
+      }
+      return [bad.length === 0, bad.join(', ')];
+    });
+    checkAsync('Версия в sw.js равна APP_VERSION в store.js, из неё имя кэша', async () => {
+      const sw = await text('sw.js');
+      const version = sw.match(/const VERSION = '([^']+)'/)?.[1];
+      const ok = version === store.APP_VERSION && /const CACHE = PREFIX \+ VERSION/.test(sw) && cacheName() === `vtg-shell-${store.APP_VERSION}`;
+      return [ok, `sw.js ${version}, store.js ${store.APP_VERSION}`];
+    });
+    checkAsync('Служебный ключ хранилища в резервную копию не попадает', async () => {
+      const data = await store.exportData();
+      return !data.stores.kv.some(([k]) => k === 'storage');
+    });
+
+    // Заморозка последней: после неё модуль хранилища этой страницы больше не пишет
+    await Promise.all(pending);
+    checkAsync('Вкладка после оповещения ничего не пишет: ни отложенный ввод, ни черновик, ни запись в базу', async () => {
+      const DRAFT = 'vtg:active-draft';
+      const draftBefore = localStorage.getItem(DRAFT);
+      const activeBefore = JSON.stringify(await store.get('activeWorkout') ?? null);
+      store.freeze();
+      session.saveActiveSoon({ id: 'freeze-probe', items: [] });
+      window.dispatchEvent(new Event('pagehide'));
+      await store.set('freezeProbe', 1);
+      await store.batch([{ store: 'kv', key: 'freezeProbe', put: 2 }]);
+      await sleep(600);   // отложенная запись срабатывает через 400 мс
+      const draftAfter = localStorage.getItem(DRAFT);
+      const activeAfter = JSON.stringify(await store.get('activeWorkout') ?? null);
+      const probe = await store.get('freezeProbe');
+      const problems = [];
+      if (draftAfter !== draftBefore) problems.push('черновик записан');
+      if (activeAfter !== activeBefore) problems.push('activeWorkout изменён');
+      if (probe !== undefined) problems.push('запись дошла до базы');
+      return [problems.length === 0, problems.join(', ')];
+    });
+    await Promise.all(pending);
+
+    // ---- Вывод ----
+    const list = document.getElementById('list');
+    for (const r of results) {
+      const li = document.createElement('li');
+      li.className = r.ok ? 'ok' : 'fail';
+      const mark = document.createElement('span');
+      mark.className = 'mark';
+      mark.textContent = r.ok ? 'Пройдено' : 'Не пройдено';
+      const body = document.createElement('span');
+      body.textContent = r.name;
+      if (r.detail && !r.ok) {
+        const d = document.createElement('span');
+        d.className = 'detail';
+        d.textContent = ` ${r.detail}`;
+        body.append(d);
+      }
+      li.append(mark, body);
+      list.append(li);
+    }
+    const passed = results.filter((r) => r.ok).length;
+    document.getElementById('total').textContent = `Пройдено ${passed} из ${results.length}`;
+    window.__results = { passed, total: results.length, failed: results.filter((r) => !r.ok).map((r) => `${r.name}: ${r.detail}`) };
+  </script>
+</body>
+</html>

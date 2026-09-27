@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="VAULT-TEC GYM">
+  <meta name="format-detection" content="telephone=no">
+  <!-- Цвет темы и фона равен --c-bg в src/tokens.css и полям manifest.webmanifest, сверяется в tools/logic_test.html -->
+  <meta name="theme-color" content="#F4F6F3">
+  <title>VAULT-TEC GYM</title>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+  <link rel="icon" href="assets/icons/icon-192.png" type="image/png">
+
+  <!-- Шрифты с Google Fonts подключаются только при сети: без сети запрос не делается
+       и в консоли нет ошибки, текст набирается запасными шрифтами с подогнанными метриками из src/tokens.css -->
+  <script>
+    if (navigator.onLine) {
+      for (const [rel, href, cors] of [
+        ['preconnect', 'https://fonts.googleapis.com'],
+        ['preconnect', 'https://fonts.gstatic.com', true],
+        ['stylesheet', 'https://fonts.googleapis.com/css2?family=Geologica:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap']
+      ]) {
+        const link = document.createElement('link');
+        link.rel = rel;
+        link.href = href;
+        if (cors) link.crossOrigin = '';
+        document.head.append(link);
+      }
+    }
+  </script>
+
+  <link rel="stylesheet" href="src/tokens.css">
+  <link rel="stylesheet" href="src/app.css">
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header" id="app-header"></header>
+    <main class="app-main" id="app-main"></main>
+  </div>
+  <noscript><p class="app-noscript">Для работы приложения нужен JavaScript.</p></noscript>
+</body>
+</html>

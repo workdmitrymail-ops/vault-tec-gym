@@ -1,0 +1,123 @@
+/* VAULT-TEC GYM · дизайн токены
+   Сняты из артборда 01B "ГЛАВНЫЙ · СТИЛЬ VAULT" в Claude Design.
+   Менять значения только здесь.
+   Синего и тёмно-зелёных оттенков в палитре нет, решение владельца проекта. */
+
+/* Запасные шрифты с подогнанными метриками.
+   Без сети шрифты Google не загружаются, и текст набирается системными Arial и Menlo или Courier New.
+   size-adjust подгоняет среднюю ширину русского текста интерфейса под Geologica и JetBrains Mono,
+   переопределения высот ставят базовую линию туда же, поэтому переносы строк и высоты блоков не меняются.
+   Коэффициенты измерены по тексту интерфейса на холсте браузера: Geologica шире Arial на 7 процентов
+   в начертании 400, на 9 в 500, на 3 и 4 в 600 и 700; ширина знака JetBrains Mono 0.6 em, как у Courier New,
+   у Menlo 0.602 em. Вертикальные метрики Geologica 0.98 и 0.28 em, JetBrains Mono 1.02 и 0.30 em,
+   переопределения делятся на size-adjust. */
+@font-face { font-family: 'Geologica Fallback'; font-weight: 400; src: local('Arial'), local('ArialMT'); size-adjust: 107.09%; ascent-override: 91.51%; descent-override: 26.15%; line-gap-override: 0%; }
+@font-face { font-family: 'Geologica Fallback'; font-weight: 500; src: local('Arial'), local('ArialMT'); size-adjust: 108.60%; ascent-override: 90.24%; descent-override: 25.78%; line-gap-override: 0%; }
+@font-face { font-family: 'Geologica Fallback'; font-weight: 600; src: local('Arial Bold'), local('Arial-BoldMT'); size-adjust: 102.65%; ascent-override: 95.47%; descent-override: 27.28%; line-gap-override: 0%; }
+@font-face { font-family: 'Geologica Fallback'; font-weight: 700; src: local('Arial Bold'), local('Arial-BoldMT'); size-adjust: 104.08%; ascent-override: 94.16%; descent-override: 26.90%; line-gap-override: 0%; }
+@font-face { font-family: 'JetBrains Mono Fallback'; font-weight: 400 500; src: local('Menlo Regular'), local('Menlo-Regular'), local('Menlo'); size-adjust: 99.66%; ascent-override: 102.35%; descent-override: 30.10%; line-gap-override: 0%; }
+@font-face { font-family: 'JetBrains Mono Fallback Alt'; font-weight: 400 500; src: local('Courier New'), local('CourierNewPSMT'); size-adjust: 100%; ascent-override: 102%; descent-override: 30%; line-gap-override: 0%; }
+
+:root {
+  /* Цвет */
+  --c-bg:          #F4F6F3;
+  --c-card:        #FFFFFF;
+  --c-sunken:      #F4F6F3;
+  --c-line:        #D8DED6;
+  --c-text:        #0C2413;
+  --c-muted:       #4C6B54;
+  --c-accent:      #00B03C;   /* основной зелёный: заливка кнопок, чипов, вкладок, шапки главного экрана,
+                                 данные графиков и полос объёма, рамки и скобки активной карточки.
+                                 Текстом на светлом фоне не используется: для текста --c-text и --c-muted */
+  --c-accent-dark: #009433;   /* нажатие на зелёную кнопку */
+  --c-on-accent:   #FFFFFF;   /* белый на --c-accent: исключение из правила контраста, см. CLAUDE.md */
+  --c-mark:        #FCD94C;
+  --c-on-mark:     #2A2100;
+  --c-danger:      #B3261E;
+  --c-disabled-bg: #E8EBE7;
+  --c-disabled-fg: #5C6A5E;   /* 4.7:1 на --c-disabled-bg: недоступность видна по плоской заливке без тени */
+  --c-scrim:       rgba(12,36,19,0.40);  /* затемнение под листом */
+
+  /* Тень: светлая сверху слева, тёмная снизу справа */
+  --shadow: -2px -2px 6px rgba(255,255,255,0.9), 4px 6px 16px rgba(12,36,19,0.10);
+
+  /* Форма */
+  --r-card: 22px;
+  --r-tile: 18px;
+  --r-pill: 999px;
+  --brackets: 14px;      /* длина угловых скобок активной карточки */
+  --bracket-w: 2px;      /* толщина угловых скобок */
+  --stripe: 5px;         /* акцентная полоса слева у активной карточки */
+  --border: 1px;         /* граница кнопок, чипов, степперов, строк подходов */
+
+  /* Сетка */
+  --pad: 20px;           /* поля экрана */
+  --gap: 16px;           /* между блоками */
+  --gap-sm: 12px;
+  --gap-xs: 6px;         /* внутри плотных групп: кружки недель цикла, строки плиток */
+  --gap-grid: 14px;      /* между плитками */
+  --card-pad: 18px;
+  --pill-pad: 6px;       /* внутренний отступ белой подложки под кругами в шапке и сегментов */
+  --pill-gap: 10px;      /* расстояние между кругами на подложке */
+
+  /* Размеры элементов */
+  --h-btn: 56px;
+  --h-chip: 38px;
+  --h-stepper: 44px;
+  --h-tap: 44px;         /* минимальная зона нажатия */
+  --icon: 24px;
+  --icon-sm: 16px;       /* иконка внутри строки: галочка на плашке, стрелка изменения */
+  --r-tick: 10px;        /* скругление квадратной отметки подхода */
+  --icon-stroke-thin: 1.5; /* толщина линии шестерёнки в шапке */
+  --avatar: 44px;        /* круги аватара и настроек в шапке главного экрана */
+  --tile-img: 80px;      /* картинка на плитке раздела */
+  --card-img: 120px;     /* картинка на главной карточке */
+  --map-w: 132px;        /* мышечная карта в карточке упражнения */
+  --map-h: 176px;
+  --map-secondary: 0.35; /* непрозрачность вспомогательных групп на карте */
+  --stepper-min: 136px;  /* минимальная ширина степпера: две кнопки и число */
+  --z-bar: 10;           /* нижняя полоса экрана тренировки */
+  --map-ratio: 0.75;     /* ширина к высоте мышечной карты, 132 / 176 */
+  --hero-img: 200px;     /* иллюстрация экрана завершения и пустого состояния */
+  --progress-h: 6px;     /* полоса прогресса тренировки и отдыха */
+  --bar-w: 72px;         /* короткая полоса значения в строке группы мышц */
+  --switch-w: 52px;      /* переключатель */
+  --switch-h: 32px;
+  --chart-h: 160px;      /* высота графика */
+  --chart-line: 2px;     /* толщина линии графика */
+  --chart-dot: 4px;      /* радиус точки графика */
+
+  /* Шрифты */
+  --f-head: 'Geologica', 'Geologica Fallback', system-ui, sans-serif;
+  --f-mono: 'JetBrains Mono', 'JetBrains Mono Fallback', 'JetBrains Mono Fallback Alt', ui-monospace, monospace;
+
+  /* Шкала: размер / высота строки / насыщенность */
+  --t-screen:   700 24px/30px var(--f-head);   /* заголовок экрана без навигации */
+  --t-header:   600 18px/24px var(--f-head);   /* заголовок в шапке с навигацией */
+  --t-card:     600 18px/24px var(--f-head);   /* заголовок карточки */
+  --t-label:    500 12px/16px var(--f-head);   /* подпись раздела, прописные, 0.04em */
+  --t-body:     400 15px/20px var(--f-head);
+  --t-dense:    400 13px/18px var(--f-head);   /* плотные списки */
+  --t-value:    500 28px/32px var(--f-mono);   /* крупное значение */
+  --t-tile:     500 22px/28px var(--f-mono);   /* число в плитке итога: пять цифр помещаются на ширине 320 */
+  --t-timer:    500 56px/60px var(--f-mono);   /* табло таймера */
+  --t-data:     400 15px/20px var(--f-mono);   /* данные и таблицы */
+  --t-small:    400 12px/16px var(--f-mono);
+}
+
+/* Базовые классы, на которых строятся экраны */
+.card       { background: var(--c-card); border-radius: var(--r-card); box-shadow: var(--shadow); padding: var(--card-pad); }
+.card-sunken{ background: var(--c-sunken); border-radius: var(--r-tile); box-shadow: var(--shadow); }
+.header-bar { background: var(--c-accent); color: var(--c-on-accent); border-radius: var(--r-card); box-shadow: var(--shadow); padding: 14px 16px; }
+.btn        { height: var(--h-btn); border-radius: var(--r-pill); border: 1px solid var(--c-line); box-shadow: var(--shadow); font: var(--t-body); cursor: pointer; }
+.btn-primary{ background: var(--c-accent); color: var(--c-on-accent); border-color: var(--c-accent); }
+.btn-primary:active{ background: var(--c-accent-dark); border-color: var(--c-accent-dark); }
+.btn-second { background: var(--c-card); color: var(--c-text); }
+.btn[disabled]{ background: var(--c-disabled-bg); color: var(--c-disabled-fg); box-shadow: none; cursor: default; }
+.chip       { height: var(--h-chip); padding: 0 18px; border-radius: var(--r-pill); border: 1px solid var(--c-line); box-shadow: var(--shadow); background: var(--c-card); color: var(--c-muted); font: 400 12px/16px var(--f-head); display: inline-flex; align-items: center; }
+.chip-on    { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); font-weight: 500; }
+.stepper    { height: var(--h-stepper); border-radius: var(--r-pill); border: 1px solid var(--c-line); background: var(--c-card); display: inline-flex; align-items: center; }
+.tick       { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--c-line); background: var(--c-card); }
+.tick-on    { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-on-accent); }
+.label      { font: var(--t-label); letter-spacing: 0.04em; text-transform: uppercase; color: var(--c-muted); }
+.divider    { height: 1px; background: var(--c-line); }
